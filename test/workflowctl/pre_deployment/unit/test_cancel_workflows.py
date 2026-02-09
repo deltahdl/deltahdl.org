@@ -146,27 +146,24 @@ class TestGetCancelableRuns:
         assert result == []
 
 
-class TestMainEdgeCases:
-    """Edge case tests for main function."""
-
-    def test_returns_0_when_no_merge_roots(self, cancel) -> None:
-        """Test returns 0 when compute_merge_roots returns empty."""
-        argv = [
-            "prog", "--running", '["bootstrap"]',
-            "--graph", "g.json", "--repo", "o/r", "--changed-files", ""
-        ]
-        with patch.object(sys, "argv", argv):
+def test_main_returns_0_when_no_merge_roots(cancel) -> None:
+    """Test returns 0 when compute_merge_roots returns empty."""
+    argv = [
+        "prog", "--running", '["bootstrap"]',
+        "--graph", "g.json", "--repo", "o/r", "--changed-files", ""
+    ]
+    with patch.object(sys, "argv", argv):
+        with patch(
+            "cancel.parse_running_workflows",
+            return_value=(["bootstrap"], None)
+        ):
             with patch(
-                "cancel.parse_running_workflows",
-                return_value=(["bootstrap"], None)
+                "cancel.load_graph_and_compute_roots",
+                return_value=({"bootstrap": {}}, ["bootstrap"], None)
             ):
                 with patch(
-                    "cancel.load_graph_and_compute_roots",
-                    return_value=({"bootstrap": {}}, ["bootstrap"], None)
+                    "cancel.compute_merge_roots",
+                    return_value=[]
                 ):
-                    with patch(
-                        "cancel.compute_merge_roots",
-                        return_value=[]
-                    ):
-                        result = cancel.main()
-        assert result == 0
+                    result = cancel.main()
+    assert result == 0

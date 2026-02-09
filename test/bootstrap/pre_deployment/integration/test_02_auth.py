@@ -2,7 +2,6 @@
 
 Verify AWS credentials are valid before testing authorization or state.
 """
-import boto3
 
 
 class TestAWSAuthentication:

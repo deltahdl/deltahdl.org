@@ -4,8 +4,6 @@ Verify prerequisite resources are configured correctly. Assumes existence tests 
 """
 import os
 
-import pytest
-
 
 def _is_github_actions():
     """Check if running in GitHub Actions."""

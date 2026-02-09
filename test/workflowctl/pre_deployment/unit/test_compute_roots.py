@@ -2,24 +2,10 @@
 
 import io
 import sys
+from test.workflowctl.conftest import SAMPLE_GRAPH
 from unittest.mock import patch
 
 import pytest
-
-
-# Sample dependency graph for testing
-SAMPLE_GRAPH = {
-    "bootstrap": {
-        "name": "Bootstrap",
-        "depends_on": [],
-        "paths": [".github/workflows/bootstrap.yml", "src/bootstrap/**"],
-    },
-    "www_redirect": {
-        "name": "WWW Redirect",
-        "depends_on": ["bootstrap"],
-        "paths": [".github/workflows/www_redirect.yml", "src/www/redirect/**"],
-    },
-}
 
 
 class TestFileMatchesPatterns:
@@ -734,30 +720,34 @@ class TestComputeMergeRoots:
         assert result == []
 
 
-class TestTopologicalSortLevelsCycle:
-    """Tests for cycle detection in topological_sort_levels."""
+def test_topological_sort_levels_handles_cyclic_graph(compute_roots) -> None:
+    """Test gracefully handles cyclic dependencies."""
+    cyclic_graph = {
+        "a": {"depends_on": ["c"]},
+        "b": {"depends_on": ["a"]},
+        "c": {"depends_on": ["b"]},  # cycle: a -> b -> c -> a
+    }
+    result = compute_roots.topological_sort_levels(
+        {"a", "b", "c"}, cyclic_graph
+    )
+    # Should return partial result (empty), not infinite loop
+    assert isinstance(result, list)
 
-    def test_handles_cyclic_graph(self, compute_roots) -> None:
-        """Test gracefully handles cyclic dependencies."""
-        cyclic_graph = {
-            "a": {"depends_on": ["c"]},
-            "b": {"depends_on": ["a"]},
-            "c": {"depends_on": ["b"]},  # cycle: a -> b -> c -> a
-        }
-        result = compute_roots.topological_sort_levels({"a", "b", "c"}, cyclic_graph)
-        # Should return partial result (empty), not infinite loop
-        assert isinstance(result, list)
 
-
-class TestMainLevelsIndexed:
-    """Tests for main with --levels --indexed."""
-
-    def test_outputs_indexed_format(self, compute_roots, capsys) -> None:
-        """Test main with --levels --indexed outputs indexed format."""
-        graph = {"a": {"depends_on": [], "paths": ["a.py"]}}
-        argv = ["prog", "--changed-files", "a.py", "--levels", "--indexed"]
-        with patch.object(sys, "argv", argv):
-            with patch("compute_roots.load_dependency_graph", return_value=graph):
-                compute_roots.main()
-        out = capsys.readouterr().out
-        assert '"idx":' in out
+def test_main_levels_indexed_outputs_format(
+    compute_roots, capsys
+) -> None:
+    """Test main with --levels --indexed outputs indexed format."""
+    graph = {"a": {"depends_on": [], "paths": ["a.py"]}}
+    argv = [
+        "prog", "--changed-files", "a.py",
+        "--levels", "--indexed",
+    ]
+    with patch.object(sys, "argv", argv):
+        with patch(
+            "compute_roots.load_dependency_graph",
+            return_value=graph,
+        ):
+            compute_roots.main()
+    out = capsys.readouterr().out
+    assert '"idx":' in out

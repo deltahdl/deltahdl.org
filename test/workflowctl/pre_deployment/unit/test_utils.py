@@ -77,32 +77,29 @@ class TestAddRunningArg:
         assert args.running == '["workflow1"]'
 
 
-class TestParseChangedFiles:
-    """Tests for parse_changed_files function."""
-
-    @pytest.mark.parametrize(
-        "input_str,expected",
-        [
-            ("file.py", ["file.py"]),
-            ("file1.py,file2.py,file3.py", ["file1.py", "file2.py", "file3.py"]),
-            ("file1.py, file2.py , file3.py", ["file1.py", "file2.py", "file3.py"]),
-            ("file1.py,,file2.py,", ["file1.py", "file2.py"]),
-            ("", []),
-            (",,,", []),
-        ],
-        ids=[
-            "single_file",
-            "multiple_files",
-            "strips_whitespace",
-            "filters_empty_strings",
-            "empty_string",
-            "only_commas",
-        ],
-    )
-    def test_parse_changed_files(self, utils, input_str: str, expected: list) -> None:
-        """Test parse_changed_files with various inputs."""
-        result = utils.parse_changed_files(input_str)
-        assert result == expected
+@pytest.mark.parametrize(
+    "input_str,expected",
+    [
+        ("file.py", ["file.py"]),
+        ("file1.py,file2.py,file3.py", ["file1.py", "file2.py", "file3.py"]),
+        ("file1.py, file2.py , file3.py", ["file1.py", "file2.py", "file3.py"]),
+        ("file1.py,,file2.py,", ["file1.py", "file2.py"]),
+        ("", []),
+        (",,,", []),
+    ],
+    ids=[
+        "single_file",
+        "multiple_files",
+        "strips_whitespace",
+        "filters_empty_strings",
+        "empty_string",
+        "only_commas",
+    ],
+)
+def test_parse_changed_files(utils, input_str: str, expected: list) -> None:
+    """Test parse_changed_files with various inputs."""
+    result = utils.parse_changed_files(input_str)
+    assert result == expected
 
 
 class TestParseRunningWorkflows:

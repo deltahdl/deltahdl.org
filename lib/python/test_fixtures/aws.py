@@ -64,7 +64,7 @@ def route53_client(request):
 
 
 @pytest.fixture(scope="session")
-def acm_client(request):
+def acm_client():
     """Create an ACM client for us-east-1 (CloudFront requirement)."""
     return boto3.client("acm", region_name="us-east-1")
 

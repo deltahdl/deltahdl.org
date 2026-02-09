@@ -1,8 +1,8 @@
 """Layer 2: Authentication tests for www redirect pre-deployment validation.
 
-Verify AWS credentials are valid before testing authorization, existence, or capability.
+Verify AWS credentials are valid before testing authorization, existence,
+or capability.
 """
-import pytest
 
 
 def test_aws_credentials_return_account(sts_client):

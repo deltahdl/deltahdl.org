@@ -2,7 +2,6 @@
 
 Verify resources are configured correctly. Assumes existence tests passed.
 """
-import pytest
 
 
 def test_cloudfront_aliases_include_apex(distribution_config, config):

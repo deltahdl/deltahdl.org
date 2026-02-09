@@ -4,6 +4,7 @@ from pathlib import Path
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from repo_utils import REPO_ROOT
 from opentofu_config import TEST_AWS_REGION
 
@@ -114,3 +115,21 @@ def hosted_zone_id(request):
 def src_dir():
     """Provide the redirect source directory path."""
     return REPO_ROOT / "src" / "www" / "redirect"
+
+
+def head_bucket_status_code(s3_client_instance, bucket_name):
+    """Call HeadBucket and return the HTTP status code.
+
+    Calls pytest.fail if the bucket does not exist (404). Re-raises
+    other ClientError exceptions. Returns 200 on success.
+    """
+    try:
+        response = s3_client_instance.head_bucket(Bucket=bucket_name)
+        return response["ResponseMetadata"]["HTTPStatusCode"]
+    except ClientError as exc:
+        error_code = exc.response["Error"]["Code"]
+        if error_code == "404":
+            pytest.fail(
+                f"State bucket '{bucket_name}' does not exist"
+            )
+        raise

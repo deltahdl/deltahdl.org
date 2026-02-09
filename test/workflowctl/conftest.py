@@ -9,7 +9,10 @@ tests, use pytest_plugins = ['test_fixtures.unit'] or ['test_fixtures.aws'].
 """
 
 import importlib.util
+import json
 import sys
+import tempfile
+from pathlib import Path
 from typing import Any, Dict
 
 import pytest
@@ -125,3 +128,19 @@ def sample_graph() -> Dict[str, Dict[str, Any]]:
     Each workflow has name, depends_on, and paths fields.
     """
     return SAMPLE_GRAPH.copy()
+
+
+@pytest.fixture
+def sample_graph_file():
+    """Create a temporary graph file for testing CLI commands.
+
+    Writes SAMPLE_GRAPH to a temporary JSON file and yields the path.
+    The file is cleaned up after the test completes.
+    """
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False
+    ) as graph_file:
+        json.dump(SAMPLE_GRAPH, graph_file)
+        graph_file.flush()
+        yield graph_file.name
+    Path(graph_file.name).unlink(missing_ok=True)

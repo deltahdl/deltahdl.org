@@ -208,38 +208,37 @@ class TestShouldInvalidateCloudfront:
         assert result is False
 
 
-class TestMainWithRunningWorkflows:
-    """Tests for main with running workflows."""
-
-    def test_calls_compute_merge_roots_with_running(self, dispatch_roots) -> None:
-        """Test compute_merge_roots is called when running_workflows provided."""
-        graph: dict = {"a": {"depends_on": []}, "b": {"depends_on": []}}
-        argv = [
-            "prog", "--running", '["b"]',
-            "--graph", "g.json", "--repo", "o/r",
-            "--changed-files", "", "--commit-message", ""
-        ]
-        with patch.object(sys, "argv", argv):
+def test_main_calls_compute_merge_roots_with_running(
+    dispatch_roots,
+) -> None:
+    """Test compute_merge_roots is called when running_workflows provided."""
+    graph: dict = {"a": {"depends_on": []}, "b": {"depends_on": []}}
+    argv = [
+        "prog", "--running", '["b"]',
+        "--graph", "g.json", "--repo", "o/r",
+        "--changed-files", "", "--commit-message", ""
+    ]
+    with patch.object(sys, "argv", argv):
+        with patch(
+            "dispatch_roots.load_graph_and_compute_roots",
+            return_value=(graph, ["a"], None)
+        ):
             with patch(
-                "dispatch_roots.load_graph_and_compute_roots",
-                return_value=(graph, ["a"], None)
+                "dispatch_roots.parse_running_workflows",
+                return_value=(["b"], None)
             ):
                 with patch(
-                    "dispatch_roots.parse_running_workflows",
-                    return_value=(["b"], None)
-                ):
+                    "dispatch_roots.compute_merge_roots",
+                    return_value=["a"]
+                ) as mock_merge:
                     with patch(
-                        "dispatch_roots.compute_merge_roots",
-                        return_value=["a"]
-                    ) as mock_merge:
+                        "dispatch_roots.workflow_file_exists",
+                        return_value=True
+                    ):
                         with patch(
-                            "dispatch_roots.workflow_file_exists",
+                            "dispatch_roots.dispatch_workflow",
                             return_value=True
                         ):
-                            with patch(
-                                "dispatch_roots.dispatch_workflow",
-                                return_value=True
-                            ):
-                                dispatch_roots.main()
-        mock_merge.assert_called_once_with(["b"], ["a"], graph)
-        assert True  # Explicit pass
+                            dispatch_roots.main()
+    mock_merge.assert_called_once_with(["b"], ["a"], graph)
+    assert True  # Explicit pass
