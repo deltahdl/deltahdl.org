@@ -30,8 +30,6 @@ def test_hosted_zone_has_ns_records(route53_client, hosted_zone_id):
     """Verify hosted zone has NS records configured."""
     response = route53_client.list_resource_record_sets(
         HostedZoneId=hosted_zone_id,
-        StartRecordType="NS",
-        MaxItems="1"
     )
     records = response.get("ResourceRecordSets", [])
     ns_records = [r for r in records if r["Type"] == "NS"]
