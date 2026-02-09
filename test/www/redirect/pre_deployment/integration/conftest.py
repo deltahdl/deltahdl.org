@@ -108,3 +108,9 @@ def hosted_zone_id(request):
     if not zone_id:
         pytest.skip("hosted_zone_id not found in bootstrap outputs")
     return zone_id
+
+
+@pytest.fixture
+def src_dir():
+    """Provide the redirect source directory path."""
+    return REPO_ROOT / "src" / "www" / "redirect"

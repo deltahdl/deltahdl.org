@@ -1,5 +1,19 @@
 """Pytest fixtures for www redirect post-deployment integration tests."""
+import boto3
 import pytest
+
+
+@pytest.fixture(name="hosted_zone_id", scope="module")
+def hosted_zone_id_fixture(route53_client, config):
+    """Look up Route53 hosted zone ID for the redirect domain."""
+    domain_name = config["apex_fqdn"]
+    response = route53_client.list_hosted_zones_by_name(DNSName=domain_name, MaxItems="1")
+    zones = response.get("HostedZones", [])
+    for zone in zones:
+        zone_name = zone["Name"].rstrip(".")
+        if zone_name == domain_name:
+            return zone["Id"].replace("/hostedzone/", "")
+    pytest.fail(f"No hosted zone found for {domain_name}")
 
 
 @pytest.fixture(name="distribution_config", scope="module")
