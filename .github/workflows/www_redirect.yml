@@ -1,0 +1,205 @@
+---
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow_ref }}-${{ github.ref }}
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    name: Deploy www redirect infrastructure
+    permissions:
+      actions: write
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify OIDC variables
+        uses: ./.github/actions/verify-oidc-vars
+        with:
+          aws_region: ${{ vars.AWS_REGION }}
+          oidc_role_arn: ${{ vars.OIDC_ROLE_ARN }}
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.OIDC_ROLE_ARN }}
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install \
+            assert-no-inline-directives \
+            assert-no-linter-config-files \
+            assert-one-assert-per-pytest \
+            boto3 \
+            boto3-stubs \
+            botocore \
+            dnspython \
+            mypy \
+            pylint \
+            pytest \
+            pytest-dependency \
+            python-hcl2 \
+            requests \
+            types-PyYAML \
+            types-requests \
+            yamllint
+      - name: Assert no linter config files
+        run: >-
+          assert-no-linter-config-files
+          --linters pylint,mypy,yamllint
+          --verbose
+          ${{ github.workspace }}
+      - name: Assert no inline lint disables
+        run: >-
+          assert-no-inline-directives
+          --tools pylint,mypy,yamllint
+          --verbose
+          ${{ github.workspace }}/**/*
+      - name: Assert one assert per pytest
+        run: >-
+          assert-one-assert-per-pytest
+          --verbose
+          ${{ github.workspace }}/test
+      - name: Linting YAML files
+        run: |
+          EMPTY_LINES='empty-lines: {max: 0, max-start: 0, max-end: 1}'
+          KEY_ORDERING='key-ordering: enable'
+          NEWLINE_AT_EOF='new-line-at-end-of-file: enable'
+          TRUTHY='truthy: {allowed-values: ["true", "false", "on"]}'
+          RULES="$EMPTY_LINES, $KEY_ORDERING"
+          RULES="$RULES, $NEWLINE_AT_EOF, $TRUTHY"
+          python3 -m yamllint --strict \
+            --config-data "{extends: default, rules: {$RULES}}" \
+            .github/workflows/www_redirect.yml
+      - name: Run pylint on tests
+        run: |
+          PYTHONPATH=lib/python python3 -m pylint \
+            lib/python/ test/ \
+            --fail-on=C,R,W \
+            --fail-under=10.0
+      - name: Run mypy on tests
+        run: |
+          MYPYPATH=lib/python python3 -m mypy lib/python/ test/
+      - name: Install jscpd
+        run: npm install -g jscpd
+      - name: Check for duplicate code in test Python files
+        run: |
+          jscpd --pattern "**/*.py" --threshold 0 --reporters console \
+            lib/python/ test/
+      - id: opentofu
+        name: Extract OpenTofu version
+        run: |
+          OPENTOFU_VERSION=$(grep 'required_version' \
+            src/www/redirect/providers.tf | cut -d'"' -f2 | sed 's/>= //')
+          echo "version=$OPENTOFU_VERSION" >> $GITHUB_OUTPUT
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ steps.opentofu.outputs.version }}
+          tofu_wrapper: false
+      - name: OpenTofu Format Check
+        run: cd src/www/redirect && tofu fmt -diff -check -recursive
+      - name: OpenTofu Format Check on s3_bucket module
+        run: cd lib/opentofu/s3_bucket && tofu fmt -diff -check
+      - name: OpenTofu Init
+        run: cd src/www/redirect && tofu init
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: latest
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        name: Run tflint
+        run: cd src/www/redirect && tflint --init && tflint
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        name: Run tflint on s3_bucket module
+        run: cd lib/opentofu/s3_bucket && tflint --init && tflint
+      - name: Run module unit tests
+        run: |
+          TEST_DIRS="test/lib/opentofu/s3_bucket/unit/"
+          TEST_DIRS="$TEST_DIRS test/lib/opentofu/common/unit/"
+          PYTHONPATH=lib/python python3 -m pytest \
+            $TEST_DIRS \
+            --confcutdir=test --verbose --pythonwarnings=error
+      - name: Run unit tests
+        run: |
+          TEST=test/www/redirect
+          PYTHONPATH=lib/python python3 -m pytest \
+            $TEST/pre_deployment/unit/ \
+            --confcutdir=test --verbose --pythonwarnings=error
+      - name: Run pre-deployment integration tests
+        run: |
+          TEST=test/www/redirect
+          PYTHONPATH=lib/python python3 -m pytest \
+            $TEST/pre_deployment/integration/ \
+            --capture=no --confcutdir=test --verbose --pythonwarnings=error
+      - name: OpenTofu Plan
+        run: |
+          cd src/www/redirect && \
+            tofu plan
+      - name: OpenTofu Apply
+        run: cd src/www/redirect && tofu apply -auto-approve
+      - id: check_files
+        name: Check if CloudFront config changed
+        run: |
+          set -e
+          set -o pipefail
+          if git cat-file -e ${{ github.event.before }} 2>/dev/null; then
+            BASE_COMMIT="${{ github.event.before }}"
+          else
+            BASE_COMMIT="HEAD^"
+          fi
+          PATTERN='src/www/redirect/(cloudfront|cloudfront_function)'
+          git diff --name-only $BASE_COMMIT ${{ github.sha }} | \
+            if grep -qE "$PATTERN"; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+            fi
+      - if: >-
+          github.event.inputs.invalidate_cloudfront == 'true' ||
+          contains(github.event.head_commit.message,
+            '[invalidate cloudfront]') ||
+          steps.check_files.outputs.changed == 'true'
+        name: Invalidate CloudFront cache
+        run: |
+          DIST_ID=$(cd src/www/redirect && \
+            tofu output -raw distribution_id)
+          aws cloudfront create-invalidation \
+            --distribution-id "$DIST_ID" \
+            --paths "/*"
+      - name: Run post-deployment integration tests
+        run: |
+          TEST=test/www/redirect
+          PYTHONPATH=lib/python python3 -m pytest \
+            $TEST/post_deployment/integration/ \
+            --confcutdir=test --verbose --pythonwarnings=error
+      - name: Run E2E tests
+        run: |
+          TEST=test/www/redirect
+          PYTHONPATH=lib/python python3 -m pytest \
+            $TEST/post_deployment/e2e/ \
+            --confcutdir=test --verbose --pythonwarnings=error
+name: Ensuring www redirect infrastructure exists and is properly configured
+on:
+  workflow_dispatch:
+    inputs:
+      invalidate_cloudfront:
+        default: false
+        description: Force CloudFront cache invalidation
+        type: boolean
+      trigger_descendants:
+        default: false
+        description: Trigger descendant workflows after this workflow completes
+        type: boolean
+permissions:
+  actions: write
+  contents: read
+  id-token: write

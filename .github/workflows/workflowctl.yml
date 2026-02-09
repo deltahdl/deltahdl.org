@@ -1,0 +1,327 @@
+---
+# Workflow Controller
+#
+# This workflow responds to push events on main, calculates which root workflow
+# needs to run based on changed files, and dispatches it (fire-and-forget).
+# Descendant workflows are triggered via dispatch_descendants.py script.
+concurrency:
+  cancel-in-progress: false
+  group: workflowctl-${{ github.ref }}
+jobs:
+  orchestrate:
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    if: github.ref == 'refs/heads/main'
+    name: Orchestrating workflows
+    permissions:
+      actions: write
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - id: detect-changes
+        if: >-
+          github.event.inputs.force_testing != 'true' &&
+          !contains(github.event.head_commit.message, '[force testing]')
+        name: Detect workflowctl-related changes
+        run: |
+          echo "Checking for workflowctl-related file changes..."
+          WORKFLOWCTL_PATHS=(
+            ".github/workflows/workflowctl.yml"
+            "etc/workflow_dependencies.json"
+            "lib/python/"
+            "src/workflowctl/"
+            "test/workflowctl/"
+          )
+          CHANGED_FILES=$(git diff --name-only "${{ github.event.before }}" \
+            "${{ github.sha }}" 2>/dev/null || git diff --name-only HEAD~1 HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          WORKFLOWCTL_CHANGED="false"
+          for path in "${WORKFLOWCTL_PATHS[@]}"; do
+            if echo "$CHANGED_FILES" | grep -q "^${path}"; then
+              echo "Match found: $path"
+              WORKFLOWCTL_CHANGED="true"
+              break
+            fi
+          done
+          echo "workflowctl_changed=$WORKFLOWCTL_CHANGED" >> "$GITHUB_OUTPUT"
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Workflowctl testing required
+        run: echo "Workflowctl-related files changed. Running tests..."
+      - if: >-
+          github.event.inputs.force_testing != 'true' &&
+          !contains(github.event.head_commit.message, '[force testing]') &&
+          steps.detect-changes.outputs.workflowctl_changed != 'true'
+        name: Workflowctl testing not required
+        run: echo "No workflowctl-related files changed. Skipping tests."
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Install Python dependencies
+        run: |
+          python3 -m pip install \
+            assert-no-inline-directives \
+            assert-no-linter-config-files \
+            assert-one-assert-per-pytest \
+            boto3 \
+            boto3-stubs \
+            botocore \
+            dnspython \
+            mypy \
+            pylint \
+            pytest \
+            python-hcl2 \
+            pyyaml \
+            requests \
+            types-PyYAML \
+            types-requests \
+            yamllint
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Assert no linter config files
+        run: >-
+          assert-no-linter-config-files
+          --linters pylint,mypy,yamllint
+          --verbose
+          ${{ github.workspace }}
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Assert no inline lint disables
+        run: >-
+          assert-no-inline-directives
+          --tools pylint,mypy,yamllint
+          --verbose
+          ${{ github.workspace }}/**/*
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Assert one assert per pytest
+        run: >-
+          assert-one-assert-per-pytest
+          --verbose
+          ${{ github.workspace }}/test
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Linting YAML files
+        run: |
+          EMPTY_LINES='empty-lines: {max: 0, max-start: 0, max-end: 1}'
+          KEY_ORDERING='key-ordering: enable'
+          NEWLINE_AT_EOF='new-line-at-end-of-file: enable'
+          TRUTHY='truthy: {allowed-values: ["true", "false", "on"]}'
+          RULES="$EMPTY_LINES, $KEY_ORDERING"
+          RULES="$RULES, $NEWLINE_AT_EOF, $TRUTHY"
+          yamllint --strict \
+            --config-data "{extends: default, rules: {$RULES}}" \
+            .github/workflows/workflowctl.yml
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Install npm dependencies
+        run: npm install -g jscpd jsonlint
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Linting JSON files
+        run: jsonlint -q etc/workflow_dependencies.json
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Run pylint on source
+        run: |
+          python3 -m pylint lib/python/ src/workflowctl/ \
+            --fail-on=C,R,W --fail-under=10.0
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Run pylint on tests
+        run: |
+          PYTHONPATH=lib/python python3 -m pylint \
+            lib/python/ test/ \
+            --fail-on=C,R,W --fail-under=10.0
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Run mypy on source
+        run: python3 -m mypy lib/python/ src/workflowctl/
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Run mypy on tests
+        run: |
+          MYPYPATH=lib/python python3 -m mypy lib/python/ test/
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Check for duplicate code in source Python files
+        run: |
+          jscpd --pattern "**/*.py" --threshold 0 --reporters console \
+            lib/python/ src/workflowctl/
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Check for duplicate code in test Python files
+        run: |
+          jscpd --pattern "**/*.py" --threshold 0 --reporters console \
+            lib/python/ test/
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Run unit tests
+        run: |
+          TEST=test/workflowctl
+          PYTHONPATH=lib/python python3 -m pytest \
+            $TEST/pre_deployment/unit/ \
+            --confcutdir=test --verbose --pythonwarnings=error
+      - if: >-
+          github.event.inputs.force_testing == 'true' ||
+          contains(github.event.head_commit.message, '[force testing]') ||
+          steps.detect-changes.outputs.workflowctl_changed == 'true'
+        name: Run pre-deployment integration tests
+        run: |
+          TEST=test/workflowctl
+          PYTHONPATH=lib/python python3 -m pytest \
+            $TEST/pre_deployment/integration/ \
+            --confcutdir=test --verbose --pythonwarnings=error
+      - env:
+          COMMITS_JSON: ${{ toJSON(github.event.commits) }}
+        id: files
+        name: Get changed files
+        run: |
+          OUTPUT=$(python3 src/workflowctl/workflowctl.py get-changed-files \
+            --base "${{ github.event.before }}" \
+            --head "${{ github.sha }}" \
+            --commits "$COMMITS_JSON")
+          # Extract files array and convert to comma-separated
+          CHANGED=$(echo "$OUTPUT" | jq -r '.files | join(",")')
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+      - id: running
+        name: Get running workflows
+        run: |
+          CMD="python3 src/workflowctl/workflowctl.py get-running-workflows"
+          OUTPUT=$($CMD \
+            --repo ${{ github.repository }} \
+            --graph etc/workflow_dependencies.json)
+          # Extract workflows array as JSON
+          RUNNING=$(echo "$OUTPUT" | jq -c '.workflows')
+          echo "workflows=$RUNNING" >> "$GITHUB_OUTPUT"
+      - id: plan
+        name: Compute root workflows
+        run: |
+          GRAPH="etc/workflow_dependencies.json"
+          START_FROM="${{ inputs.start_from }}"
+          if [ -n "$START_FROM" ]; then
+            # Manual dispatch: use provided workflows directly (comma-separated)
+            ROOTS=$(echo "$START_FROM" | tr -d ' ')
+          else
+            CHANGED="${{ steps.files.outputs.changed }}"
+            RUNNING='${{ steps.running.outputs.workflows }}'
+            # Get root workflows, merge with running
+            CMD="python3 src/workflowctl/workflowctl.py compute-root-workflows"
+            OUTPUT=$($CMD \
+              --changed-files "$CHANGED" \
+              --graph "$GRAPH" \
+              --running "$RUNNING")
+            # Extract workflow names and convert to comma-separated
+            ROOTS=$(echo "$OUTPUT" | jq -r '.workflows | join(",")' || echo "")
+          fi
+          echo "root_workflows=$ROOTS" >> "$GITHUB_OUTPUT"
+      - if: steps.plan.outputs.root_workflows == ''
+        name: No workflows to dispatch
+        run: echo "No workflow-related files changed or no workflows computed"
+      - if: >-
+          steps.plan.outputs.root_workflows != '' &&
+          steps.running.outputs.workflows != '[]'
+        name: Cancel superseded workflows
+        run: |
+          python3 src/workflowctl/workflowctl.py cancel-superseded-workflows \
+            --repo "${{ github.repository }}" \
+            --changed-files "${{ steps.files.outputs.changed }}" \
+            --running '${{ steps.running.outputs.workflows }}' \
+            --graph etc/workflow_dependencies.json
+      - env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        if: >-
+          steps.plan.outputs.root_workflows != '' &&
+          inputs.start_from == ''
+        name: Dispatch root workflows (fire-and-forget)
+        run: |
+          FLAGS=""
+          if [ "${{ inputs.trigger_descendants }}" = "true" ]; then
+            FLAGS="$FLAGS --trigger-descendants"
+          fi
+          if [ "${{ inputs.invalidate_cloudfront }}" = "true" ]; then
+            FLAGS="$FLAGS --invalidate-cloudfront"
+          fi
+          python3 src/workflowctl/workflowctl.py dispatch-root-workflows \
+            --repo "${{ github.repository }}" \
+            --changed-files "${{ steps.files.outputs.changed }}" \
+            --running '${{ steps.running.outputs.workflows }}' \
+            $FLAGS
+      - if: inputs.start_from != ''
+        name: Dispatch workflow (fire-and-forget)
+        run: |
+          FLAGS=""
+          if [ "${{ inputs.trigger_descendants }}" = "true" ]; then
+            FLAGS="$FLAGS --trigger-descendants"
+          fi
+          if [ "${{ inputs.invalidate_cloudfront }}" = "true" ]; then
+            FLAGS="$FLAGS --invalidate-cloudfront"
+          fi
+          python3 src/workflowctl/workflowctl.py dispatch-workflow \
+            --workflow "${{ inputs.start_from }}" \
+            --repo "${{ github.repository }}" \
+            $FLAGS
+name: Workflow Controller
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      force_testing:
+        default: false
+        description: Force workflowctl testing to run
+        type: boolean
+      invalidate_cloudfront:
+        default: false
+        description: Force CloudFront cache invalidation in descendant workflows
+        type: boolean
+      start_from:
+        description: 'Workflow to start from (e.g., "bootstrap")'
+        type: string
+      trigger_descendants:
+        default: true
+        description: Trigger descendant workflows after root workflows complete
+        type: boolean
+permissions:
+  actions: write
+  contents: read

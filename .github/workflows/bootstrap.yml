@@ -1,0 +1,236 @@
+---
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow_ref }}-${{ github.ref }}
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    name: Deploy bootstrap infrastructure
+    permissions:
+      actions: write
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - id: oidc
+        name: Check OIDC availability
+        run: |
+          if [ -n "${{ vars.AWS_REGION }}" ] && \
+             [ -n "${{ vars.OIDC_ROLE_ARN }}" ]; then
+            echo "is_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_available=false" >> $GITHUB_OUTPUT
+          fi
+      - if: steps.oidc.outputs.is_available == 'true'
+        name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.OIDC_ROLE_ARN }}
+      - if: steps.oidc.outputs.is_available != 'true'
+        name: Extract AWS region (cold start)
+        run: |
+          AWS_REGION=$(grep 'aws_region' \
+            lib/opentofu/common/locals.tf \
+            | grep -v '\$' | cut -d'"' -f2)
+          echo "aws_region=$AWS_REGION" >> $GITHUB_ENV
+      - if: steps.oidc.outputs.is_available != 'true'
+        name: Configure AWS credentials via static keys (cold start)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-region: ${{ env.aws_region }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install \
+            assert-no-inline-directives \
+            assert-no-linter-config-files \
+            assert-one-assert-per-pytest \
+            boto3 \
+            boto3-stubs \
+            botocore \
+            dnspython \
+            mypy \
+            pylint \
+            pytest \
+            pytest-dependency \
+            python-hcl2 \
+            requests \
+            types-PyYAML \
+            types-requests \
+            yamllint
+      - name: Assert no linter config files
+        run: >-
+          assert-no-linter-config-files
+          --linters pylint,mypy,yamllint
+          --verbose
+          ${{ github.workspace }}
+      - name: Assert no inline lint disables
+        run: >-
+          assert-no-inline-directives
+          --tools pylint,mypy,yamllint
+          --verbose
+          ${{ github.workspace }}/**/*
+      - name: Assert one assert per pytest
+        run: >-
+          assert-one-assert-per-pytest
+          --verbose
+          ${{ github.workspace }}/test
+      - name: Linting YAML files
+        run: |
+          EMPTY_LINES='empty-lines: {max: 0, max-start: 0, max-end: 1}'
+          KEY_ORDERING='key-ordering: enable'
+          NEWLINE_AT_EOF='new-line-at-end-of-file: enable'
+          TRUTHY='truthy: {allowed-values: ["true", "false", "on"]}'
+          RULES="$EMPTY_LINES, $KEY_ORDERING"
+          RULES="$RULES, $NEWLINE_AT_EOF, $TRUTHY"
+          python3 -m yamllint --strict \
+            --config-data "{extends: default, rules: {$RULES}}" \
+            .github/workflows/bootstrap.yml
+      - name: Run pylint on tests
+        run: |
+          PYTHONPATH=lib/python:. python3 -m pylint \
+            lib/python/ test/ \
+            --fail-on=C,R,W --fail-under=10.0
+      - name: Run mypy on tests
+        run: |
+          MYPYPATH=lib/python python3 -m mypy lib/python/ test/
+      - name: Install jscpd
+        run: npm install -g jscpd
+      - name: Check for duplicate code in test Python files
+        run: |
+          jscpd --pattern "**/*.py" --threshold 0 --reporters console \
+            lib/python/ test/
+      - id: opentofu
+        name: Extract OpenTofu version
+        run: |
+          OPENTOFU_VERSION=$(grep 'required_version' \
+            src/bootstrap/providers.tf | cut -d'"' -f2 | sed 's/>= //')
+          echo "version=$OPENTOFU_VERSION" >> $GITHUB_OUTPUT
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ steps.opentofu.outputs.version }}
+          tofu_wrapper: false
+      - name: OpenTofu Format Check
+        run: |
+          cd src/bootstrap && \
+            tofu fmt -diff -check -recursive
+      - name: OpenTofu Init
+        run: |
+          cd src/bootstrap && \
+            tofu init
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: latest
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        name: Run tflint
+        run: |
+          cd src/bootstrap && \
+            tflint --init && \
+            tflint
+      - name: Run unit tests
+        run: |
+          TEST=test/bootstrap
+          PYTHONPATH=lib/python python3 -m pytest \
+            $TEST/pre_deployment/unit/ \
+            --confcutdir=test --verbose --pythonwarnings=error
+      - name: Run pre-deployment integration tests
+        run: |
+          BASE=test/bootstrap
+          PYTHONPATH=lib/python python3 -m pytest \
+            $BASE/pre_deployment/integration/ \
+            --capture=no --confcutdir=test --verbose --pythonwarnings=error
+      - name: OpenTofu Plan
+        run: |
+          cd src/bootstrap && \
+            tofu plan -var-file=opentofu.tfvars
+      - name: OpenTofu Apply
+        run: |
+          cd src/bootstrap && \
+            tofu apply -auto-approve -var-file=opentofu.tfvars
+      - name: Run post-deployment integration tests
+        run: |
+          BASE=test/bootstrap
+          PYTHONPATH=lib/python python3 -m pytest \
+            $BASE/post_deployment/integration/ \
+            --confcutdir=test --verbose --pythonwarnings=error
+      - name: Run E2E tests
+        run: |
+          BASE=test/bootstrap
+          PYTHONPATH=lib/python python3 -m pytest \
+            $BASE/post_deployment/e2e/ \
+            --confcutdir=test --verbose --pythonwarnings=error
+      - env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        name: Set GitHub variables for OIDC authentication
+        run: |
+          AWS_REGION=$(grep 'aws_region' \
+            lib/opentofu/common/locals.tf \
+            | grep -v '\$' | cut -d'"' -f2)
+          ROLE_ARN=$(cd src/bootstrap && \
+            tofu output -raw arn_for_github_actions_role)
+          gh variable set AWS_REGION --body "$AWS_REGION"
+          gh variable set OIDC_ROLE_ARN --body "$ROLE_ARN"
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: descendants
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          (
+          github.event.inputs.trigger_descendants == 'true' ||
+           contains(github.event.head_commit.message,
+           '[trigger descendants]'))
+        name: Compute descendants
+        run: |
+          python3 src/workflowctl/workflowctl.py compute-descendants \
+            --workflow bootstrap \
+            --repo ${{ github.repository }}
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: >-
+          steps.descendants.outputs.ready != '[]' &&
+          github.event_name == 'workflow_dispatch' &&
+          (
+          github.event.inputs.trigger_descendants == 'true' ||
+           contains(github.event.head_commit.message,
+           '[trigger descendants]'))
+        name: Dispatch ready descendants
+        run: |
+          TRIGGER="${{ github.event.inputs.trigger_descendants }}"
+          INVALIDATE="${{ github.event.inputs.invalidate_cloudfront }}"
+          READY='${{ steps.descendants.outputs.ready }}'
+          for workflow in $(echo "$READY" | jq -r '.[]'); do
+            FLAGS="-f trigger_descendants=${TRIGGER:-false}"
+            if [ "$INVALIDATE" = "true" ]; then
+              FLAGS="$FLAGS -f invalidate_cloudfront=true"
+            fi
+            gh workflow run "${workflow}.yml" \
+              --repo ${{ github.repository }} \
+              $FLAGS
+          done
+name: Ensuring bootstrap infrastructure exists and is properly configured
+on:
+  workflow_dispatch:
+    inputs:
+      invalidate_cloudfront:
+        default: false
+        description: Force CloudFront cache invalidation
+        type: boolean
+      trigger_descendants:
+        default: true
+        description: Trigger descendant workflows after this workflow completes
+        type: boolean
+permissions:
+  actions: write
+  contents: read
+  id-token: write

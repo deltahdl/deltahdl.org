@@ -1,0 +1,25 @@
+---
+description: Verify required OIDC variables exist in GitHub repository
+inputs:
+  aws_region:
+    description: AWS region from vars.AWS_REGION
+    required: true
+  oidc_role_arn:
+    description: OIDC role ARN from vars.OIDC_ROLE_ARN
+    required: true
+name: Verify OIDC Variables
+runs:
+  steps:
+    - if: inputs.aws_region == ''
+      name: Verify AWS_REGION is set
+      run: |
+        echo "::error::Missing vars.AWS_REGION. Run bootstrap workflow."
+        exit 1
+      shell: bash
+    - if: inputs.oidc_role_arn == ''
+      name: Verify OIDC_ROLE_ARN is set
+      run: |
+        echo "::error::Missing vars.OIDC_ROLE_ARN. Run bootstrap workflow."
+        exit 1
+      shell: bash
+  using: composite
