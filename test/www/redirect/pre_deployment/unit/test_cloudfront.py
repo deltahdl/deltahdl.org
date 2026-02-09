@@ -36,10 +36,15 @@ def test_cloudfront_viewer_protocol_redirect_https(src_dir):
     assert 'viewer_protocol_policy = "redirect-to-https"' in content
 
 
-def test_cloudfront_has_s3_origin(src_dir):
-    """Verify CloudFront has an S3 origin."""
+def test_cloudfront_has_origin_block(src_dir):
+    """Verify CloudFront has an origin block."""
     content = (src_dir / "cloudfront.tf").read_text()
     assert "origin {" in content
+
+
+def test_cloudfront_origin_uses_redirect_bucket(src_dir):
+    """Verify CloudFront origin uses the redirect bucket module."""
+    content = (src_dir / "cloudfront.tf").read_text()
     assert "module.redirect_bucket.bucket_regional_domain_name" in content
 
 
@@ -85,10 +90,15 @@ def test_cloudfront_depends_on_certificate_validation(src_dir):
     assert "aws_acm_certificate_validation.redirect" in content
 
 
-def test_cloudfront_aliases_include_both_domains(src_dir):
-    """Verify CloudFront aliases include both www and apex domains."""
+def test_cloudfront_aliases_include_www_domain(src_dir):
+    """Verify CloudFront aliases include www domain."""
     content = (src_dir / "cloudfront.tf").read_text()
     assert "local.www_fqdn" in content
+
+
+def test_cloudfront_aliases_include_apex_domain(src_dir):
+    """Verify CloudFront aliases include apex domain."""
+    content = (src_dir / "cloudfront.tf").read_text()
     assert "local.apex_fqdn" in content
 
 

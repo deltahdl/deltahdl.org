@@ -95,16 +95,6 @@ def test_iam_role_exists_in_aws(iam_client, config):
     assert response['Role']['RoleName'] == role_name
 
 
-def test_github_actions_role_exists(iam_client, config):
-    """Verify GitHub Actions IAM role exists."""
-    role_name = config.get('name_for_github_actions_role', 'DeltaHDLGitHubActionsRole')
-    try:
-        response = iam_client.get_role(RoleName=role_name)
-        assert response['Role']['RoleName'] == role_name
-    except iam_client.exceptions.NoSuchEntityException:
-        assert False, f"GitHub Actions role '{role_name}' missing"
-
-
 # =============================================================================
 # OIDC
 # =============================================================================

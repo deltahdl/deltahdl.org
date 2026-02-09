@@ -18,10 +18,15 @@ def test_backend_bucket_name(src_dir):
     assert "deltahdl-opentofu-state-us-east-2" in content
 
 
-def test_backend_key(src_dir):
-    """Verify backend state key references www-redirect."""
+def test_backend_has_key_setting(src_dir):
+    """Verify backend has a key setting."""
     content = (src_dir / "backend.tf").read_text()
     assert "key" in content
+
+
+def test_backend_key_references_www_redirect(src_dir):
+    """Verify backend state key references www-redirect."""
+    content = (src_dir / "backend.tf").read_text()
     assert "www-redirect" in content
 
 
@@ -31,11 +36,16 @@ def test_backend_region(src_dir):
     assert 'region       = "us-east-2"' in content
 
 
-def test_backend_encryption_enabled(src_dir):
-    """Verify backend encryption is enabled."""
+def test_backend_has_encrypt_setting(src_dir):
+    """Verify backend has encrypt setting."""
     content = (src_dir / "backend.tf").read_text()
     assert "encrypt" in content
-    assert "true" in content
+
+
+def test_backend_encrypt_is_true(src_dir):
+    """Verify backend encryption is enabled."""
+    content = (src_dir / "backend.tf").read_text()
+    assert "encrypt" in content and "= true" in content
 
 
 def test_backend_uses_lockfile(src_dir):

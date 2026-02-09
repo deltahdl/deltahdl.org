@@ -45,24 +45,40 @@ def www_dns_record_fixture(route53_client, config, hosted_zone_id):
     return matching[0] if matching else None
 
 
-def test_apex_dns_record_points_to_cloudfront(apex_dns_record, config):
-    """Verify apex DNS record points to CloudFront."""
+def test_apex_dns_record_exists(apex_dns_record, config):
+    """Verify apex DNS A record exists."""
     assert apex_dns_record is not None, f"No A record found for {config['apex_fqdn']}"
+
+
+def test_apex_dns_record_is_alias(apex_dns_record, config):
+    """Verify apex DNS record is an alias record."""
     assert "AliasTarget" in apex_dns_record, (
         f"Record for {config['apex_fqdn']} is not an alias"
     )
+
+
+def test_apex_dns_record_points_to_cloudfront(apex_dns_record, config):
+    """Verify apex DNS alias target points to CloudFront."""
     alias_target = apex_dns_record["AliasTarget"]["DNSName"]
     assert "cloudfront.net" in alias_target, (
         f"Apex alias does not point to CloudFront: {alias_target}"
     )
 
 
-def test_www_dns_record_points_to_cloudfront(www_dns_record, config):
-    """Verify www DNS record points to CloudFront."""
+def test_www_dns_record_exists(www_dns_record, config):
+    """Verify www DNS A record exists."""
     assert www_dns_record is not None, f"No A record found for {config['www_fqdn']}"
+
+
+def test_www_dns_record_is_alias(www_dns_record, config):
+    """Verify www DNS record is an alias record."""
     assert "AliasTarget" in www_dns_record, (
         f"Record for {config['www_fqdn']} is not an alias"
     )
+
+
+def test_www_dns_record_points_to_cloudfront(www_dns_record, config):
+    """Verify www DNS alias target points to CloudFront."""
     alias_target = www_dns_record["AliasTarget"]["DNSName"]
     assert "cloudfront.net" in alias_target, (
         f"WWW alias does not point to CloudFront: {alias_target}"

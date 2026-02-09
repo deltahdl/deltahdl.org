@@ -92,11 +92,21 @@ def test_cloudfront_depends_on_certificate_validation():
     )
 
 
-def test_locals_references_module_common_values():
-    """Verify locals.tf references module.common for shared values."""
+def test_locals_references_module_common_aws_region():
+    """Verify locals.tf references module.common.aws_region."""
     locals_content = _read_file("locals.tf")
     assert "module.common.aws_region" in locals_content
+
+
+def test_locals_references_module_common_domain_name():
+    """Verify locals.tf references module.common.domain_name."""
+    locals_content = _read_file("locals.tf")
     assert "module.common.domain_name" in locals_content
+
+
+def test_locals_references_module_common_resource_prefix():
+    """Verify locals.tf references module.common.resource_prefix."""
+    locals_content = _read_file("locals.tf")
     assert "module.common.resource_prefix" in locals_content
 
 
@@ -118,6 +128,17 @@ def test_shared_module_source_path_exists():
     )
 
 
+def test_redirect_bucket_module_source_declared():
+    """Verify redirect_bucket module has a source declaration."""
+    cloudfront_content = _read_file("cloudfront.tf")
+    match = re.search(
+        r'module\s+"redirect_bucket"\s*\{[^}]*source\s*=\s*"([^"]+)"',
+        cloudfront_content,
+        re.DOTALL
+    )
+    assert match, "cloudfront.tf missing redirect_bucket module source"
+
+
 def test_redirect_bucket_module_source_path_exists():
     """Verify redirect_bucket module source path exists on disk."""
     cloudfront_content = _read_file("cloudfront.tf")
@@ -126,7 +147,6 @@ def test_redirect_bucket_module_source_path_exists():
         cloudfront_content,
         re.DOTALL
     )
-    assert match, "cloudfront.tf missing redirect_bucket module source"
     source_path = match.group(1)
     resolved_path = SRC_DIR / source_path
     assert resolved_path.exists(), (

@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 
 
 @pytest.fixture(name="test_object_key")
-def test_object_key_fixture():
+def object_key_fixture():
     """Generate a unique test object key."""
     return f".pre-deployment-test/{uuid.uuid4()}.txt"
 
@@ -23,7 +23,7 @@ def zone_name_fixture(route53_client, hosted_zone_id):
 
 
 @pytest.fixture(name="test_record_name")
-def test_record_name_fixture(zone_name):
+def record_name_fixture(zone_name):
     """Generate a unique test record name."""
     unique_id = str(uuid.uuid4())[:8]
     return f"_pre-deployment-test-{unique_id}.{zone_name}"

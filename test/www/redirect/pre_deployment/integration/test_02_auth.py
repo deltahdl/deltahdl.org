@@ -5,10 +5,15 @@ Verify AWS credentials are valid before testing authorization, existence, or cap
 import pytest
 
 
-def test_aws_credentials_valid(sts_client):
-    """Verify AWS credentials are valid by calling STS."""
+def test_aws_credentials_return_account(sts_client):
+    """Verify AWS credentials return an account ID."""
     response = sts_client.get_caller_identity()
     assert "Account" in response
+
+
+def test_aws_credentials_return_arn(sts_client):
+    """Verify AWS credentials return a caller ARN."""
+    response = sts_client.get_caller_identity()
     assert "Arn" in response
 
 
