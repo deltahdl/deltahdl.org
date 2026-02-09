@@ -1,0 +1,30 @@
+# Build outputs
+*.zip
+
+# Dependencies
+node_modules/
+
+# Test artifacts
+playwright-report/
+test-results/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# OpenTofu
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Code coverage
+coverage.json
+.coverage
