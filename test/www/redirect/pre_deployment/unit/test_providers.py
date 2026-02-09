@@ -57,7 +57,7 @@ def test_providers_us_east_1_region_hardcoded(src_dir):
 def test_providers_required_version(src_dir):
     """Verify required OpenTofu version is specified."""
     content = (src_dir / "providers.tf").read_text()
-    assert 'required_version = ">= 1.14"' in content
+    assert 'required_version = ">= 1.14.0"' in content
 
 
 def test_providers_required_providers_aws(src_dir):
