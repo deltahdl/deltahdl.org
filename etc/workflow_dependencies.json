@@ -1,0 +1,30 @@
+{
+  "bootstrap": {
+    "depends_on": [],
+    "name": "Ensuring bootstrap infrastructure exists and is properly configured",
+    "paths": [
+      ".github/workflows/bootstrap.yml",
+      "lib/python/**",
+      "lib/opentofu/common/**",
+      "src/bootstrap/**",
+      "test/bootstrap/**",
+      "test/lib/python/**"
+    ]
+  },
+  "www_redirect": {
+    "depends_on": [
+      "bootstrap"
+    ],
+    "name": "Ensuring www redirect infrastructure exists and is properly configured",
+    "paths": [
+      ".github/workflows/www_redirect.yml",
+      "lib/python/**",
+      "lib/opentofu/common/**",
+      "lib/opentofu/s3_bucket/**",
+      "src/www/redirect/**",
+      "test/lib/python/**",
+      "test/lib/opentofu/**",
+      "test/www/redirect/**"
+    ]
+  }
+}
