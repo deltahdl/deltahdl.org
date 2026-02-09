@@ -2,7 +2,7 @@
 
 
 def test_opentofu_version_constraint(bootstrap_dir):
-    """Test that OpenTofu version constraint is >= 1.14."""
+    """Test that OpenTofu version constraint is >= 1.11.0."""
     content = (bootstrap_dir / "providers.tf").read_text()
     assert 'required_version = ">= 1.11.0"' in content
 
